@@ -1,0 +1,142 @@
+//=========== SEGMENTATION.CPP ============//
+//This file involves the image pre-processing 
+//(greyscale and binarization)and image
+//processing (segmentation)
+
+
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<iostream>
+#include<vector>
+
+//========== GLOBAL VARIABLES ============//
+const int MIN_CONTOUR_AREA = 20;
+const int RESIZED_WIDTH = 28;
+const int RESIZED_HEIGHT = 28;
+
+//========== CONTOUR WITH DATA ===========//
+class contourWithInfoData {
+public:
+	// member variables
+	std::vector<cv::Point> contours;											// contour
+	cv::Rect boundingRect;														// bounding rect for contour
+	float fltArea;																// area of contour
+
+
+	bool checkIfContourIsValid() {												// obviously in a production grade program
+		if (fltArea < MIN_CONTOUR_AREA) return false;							// we would have a much more robust function for 
+		return true;															// identifying if a contour is valid !!
+	}
+
+	static bool sortByBoundingRectXPosition(const contourWithInfoData& cwdLeft, const contourWithInfoData& cwdRight) {		// this function allows us to sort
+		return(cwdLeft.boundingRect.x < cwdRight.boundingRect.x);				// the contours from left to right
+	}
+
+};
+
+
+//================= MAIN ==================//
+int main() {
+	std::vector<contourWithInfoData> contourInfoData;							// declare empty vectors,
+	std::vector<contourWithInfoData> validContourInfoData;						// we will fill these shortly (used to ensure contour validity)
+	cv::Mat inputImageEquation;													// input image handwritten equation
+	cv::Mat imageGrayscale;														// for greyscaling
+	cv::Mat imageThresh;														// for otsu method
+	cv::Mat imageThreshCopy;													// create a copy of the image before finding contours
+
+	std::vector<std::vector<cv::Point> > contours;								// declare contours vector
+	std::vector<std::vector<cv::Point> > ptContours;							// used for image cleaning 
+	std::vector<cv::Vec4i> v4iHierarchy;										// declare contours hierarchy
+
+
+
+	inputImageEquation = cv::imread("sampleEquation.jpg");							// read input image with handwritten equation
+
+
+	if (inputImageEquation.empty()) {											// if unable to open image
+		std::cout << "error: image not read from file\n\n";						// show error message on command line
+		return(0);																// and exit program
+	}
+
+
+	cv::cvtColor(inputImageEquation, imageGrayscale, CV_BGR2GRAY);				// convert to grayscale
+
+																				//Get the size of the image for otsu method
+	int rows = imageGrayscale.rows;
+	int cols = imageGrayscale.cols;
+	cv::Size s = imageGrayscale.size();
+	rows = s.height;
+	cols = s.width;
+
+																				//convert into binary image using Otsu method
+	cv::Mat left = imageGrayscale(cv::Rect(0, 0, cols, rows));
+	cv::Mat right = imageGrayscale(cv::Rect(cols, 0, imageGrayscale.cols - cols, rows));
+	cv::threshold(left, left, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(right, right, 0, 255, CV_THRESH_OTSU);
+
+	cv::threshold(imageGrayscale, imageThresh, 70, 255, CV_THRESH_BINARY_INV);		//Invert the binary image
+
+	cv::imshow("imageThresh", imageThresh);											// show threshold image for reference
+
+	imageThreshCopy = imageThresh.clone();											// make a copy of the thresh image, this in necessary b/c findContours modifies the image
+
+	cv::findContours(imageThreshCopy,												// input image, make sure to use a copy since the function will modify this image in the course of finding contours
+		contours,																// output contours
+		v4iHierarchy,															// output hierarchy
+		cv::RETR_EXTERNAL,														// retrieve the outermost contours only
+		cv::CHAIN_APPROX_SIMPLE);												// compress horizontal, vertical, and diagonal segments and leave only their end points
+
+	for (int i = 0; i < contours.size(); i++) {									// for each contour
+		contourWithInfoData contourWithInfoData;												// instantiate a contour with data object
+		contourWithInfoData.contours = contours[i];												// assign contour to contour with data
+		contourWithInfoData.boundingRect = cv::boundingRect(contourWithInfoData.contours);		// get the bounding rect
+		contourWithInfoData.fltArea = cv::contourArea(contourWithInfoData.contours);			// calculate the contour area
+		contourInfoData.push_back(contourWithInfoData);											// add contour with data object to list of all contours with data
+	}	// end for
+
+	for (int i = 0; i < contourInfoData.size(); i++) {							// for all contours
+		if (contourInfoData[i].checkIfContourIsValid()) {						// check if valid
+			validContourInfoData.push_back(contourInfoData[i]);					// if so, append to valid contour list
+		}
+	}
+	// Image cleaning(remove the noise in each contour)
+
+
+	// sort contours from left to right
+	std::sort(validContourInfoData.begin(), validContourInfoData.end(), contourWithInfoData::sortByBoundingRectXPosition);
+
+	for (int i = 0; i < validContourInfoData.size(); i++) {						// for each contour
+
+																				// draw a red rect around the current char
+		cv::rectangle(inputImageEquation,										// draw rectangle on original image
+			validContourInfoData[i].boundingRect,								// rect to draw
+			cv::Scalar(0, 0, 255),												// red
+			2);																	// thickness
+
+		cv::Mat imageROI = imageThresh(validContourInfoData[i].boundingRect);				// get ROI image of bounding rect
+
+		cv::Mat imageROIResized;
+		cv::resize(imageROI, imageROIResized, cv::Size(RESIZED_WIDTH, RESIZED_HEIGHT));		// resize image, this will be more consistent for recognition and storage
+		cv::imshow("imageROI", imageROI);													// show ROI image for reference		
+		cv::imshow("imageROIResized", imageROIResized);										// show resized ROI image for reference
+		cv::imshow("imageROIBinarized", imageGrayscale);
+		cv::imshow("inputImageEquation", inputImageEquation);					// show training numbers image, this will now have red rectangles drawn on it
+
+		std::cout << "\n NUMBER : " << i << "\n\n";
+
+		int intChar = cv::waitKey(0);											// get key press
+
+		if (intChar == 27) {													// if esc key was pressed
+			return(0);															// exit program
+		}
+		// end if
+	}
+
+	std::cout << "\nsegmentation complete\n\n";
+	return(0);
+}
+
+
+
+
