@@ -1,0 +1,144 @@
+// generate_data.cpp
+
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<opencv2/ml/ml.hpp>
+#include"histogram.cpp"
+#include<iostream>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include<vector>
+
+// global variables ///////////////////////////////////////////////////////////////////////////////
+const int MIN_CONTOUR_AREA = 100;
+const int RESIZED_IMAGE_WIDTH = 30;
+const int RESIZED_IMAGE_HEIGHT = 30;
+
+///////////////////////////////////////////// MAIN //////////////////////////////////////////////////////
+int main() {
+
+	cv::Mat matTrainingNumbers;													// input image
+	cv::Mat matGrayscale;														// for greyscaling
+	cv::Mat matBlurred;															// declare various images
+	cv::Mat matThresh;															// for otsu method
+	cv::Mat matThreshCopy;														// create a copy of the image before finding contours
+
+	std::vector<std::vector<cv::Point> > ptContours,contours;							// declare contours vector
+	std::vector<cv::Vec4i> v4iHierarchy;										// declare contours hierarchy
+																				// these are our training images
+	cv::Mat matTrainingImages;													// we have to declare a single Mat, then append to it as though it's a vector
+
+
+	matTrainingNumbers = cv::imread("connected.jpg");					// read in training numbers image
+
+
+	if (matTrainingNumbers.empty()) {											// if unable to open image
+		std::cout << "error: image not read from file\n\n";						// show error message on command line
+		return(0);																// and exit program
+	}
+	cv::cvtColor(matTrainingNumbers, matGrayscale, CV_BGR2GRAY);				// convert to grayscale
+
+																				//Get the size of the image for otsu method
+	int rows = matGrayscale.rows;
+	int cols = matGrayscale.cols;
+	cv::Size s = matGrayscale.size();
+	rows = s.height;
+	cols = s.width;
+	//convert into binary image using Otsu method
+	cv::Mat left = matGrayscale(cv::Rect(0, 0, cols, rows));
+	cv::Mat right = matGrayscale(cv::Rect(cols, 0, matGrayscale.cols - cols, rows));
+	cv::threshold(left, left, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(right, right, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(matGrayscale, matThresh, 0, 255, CV_THRESH_BINARY_INV);		//Invert the binary image
+																				//cv::imshow("matThresh", matThresh);											// show threshold image for reference
+	matThreshCopy = matThresh.clone();											// make a copy of the thresh image, this in necessary b/c findContours modifies the image
+	cv::findContours(matThreshCopy,												// input image, make sure to use a copy since the function will modify this image in the course of finding contours
+		ptContours,																// output contours
+		v4iHierarchy,															// output hierarchy
+		cv::RETR_EXTERNAL,														// retrieve the outermost contours only
+		cv::CHAIN_APPROX_SIMPLE);												// compress horizontal, vertical, and diagonal segments and leave only their end points
+
+	for (int i = 0; i < ptContours.size(); i++) {								// for each contour
+		if (cv::contourArea(ptContours[i]) > MIN_CONTOUR_AREA) {				// if contour is big enough to consider
+			cv::Rect boundingRect = cv::boundingRect(ptContours[i]);			// get the bounding rect
+			cv::rectangle(matTrainingNumbers, boundingRect, cv::Scalar(0, 0, 255), 2);		// draw red rectangle around each contour as we ask user for input
+			cv::Mat matROI = matThresh(boundingRect);							// get ROI image of bounding rect
+			cv::Mat matROIResized;
+			cv::resize(matROI, matROIResized, cv::Size(RESIZED_IMAGE_WIDTH, RESIZED_IMAGE_HEIGHT));		// resize image, this will be more consistent for recognition and storage
+
+																				//cv::imshow("matROIResized", matROIResized);							// show resized ROI image for reference
+																				//cv::imshow("matROIBinarized", matGrayscale);
+			cv::imshow("matTrainingNumbers", matTrainingNumbers);				// show training numbers image, this will now have red rectangles drawn on it
+			//cv::threshold(matROI, matROI, 70, 255, CV_THRESH_BINARY_INV);
+			////find the centerline
+			//cv::Point center(matROI.cols / 2, matROI.rows / 2);
+			//int cx = center.x;
+			//int cy = center.y;
+			//int width = boundingRect.width;
+			//int height = boundingRect.height;
+			//std::cout << "center x: " << cx << '\n';
+			//std::cout << "center y: " << cy << '\n';
+			//std::cout << "width : " << width << '\n';
+			//std::cout << "height: " << height << '\n';
+			//line(matROI, Point(0, center.y), Point(width, center.y), Scalar(0, 0, 255), 2, 8);
+			cv::findContours(matROI.clone(),												// input image, make sure to use a copy since the function will modify this image in the course of finding contours
+				contours,																// output contours
+				v4iHierarchy,															// output hierarchy
+				cv::RETR_EXTERNAL,														// retrieve the outermost contours only
+				cv::CHAIN_APPROX_SIMPLE);
+				
+			//contours = ptContours[i].size();
+
+			/*for (unsigned int i = 0; i < contours.size(); i++)
+			{
+				cv::Rect boundingRect = cv::boundingRect(contours[i]);
+				matROI = matROI(boundingRect);
+				cv::imshow("matROI", matROI);
+				for (unsigned int j = 0; j < contours[i].size(); j++)
+				{
+					cout << "Point(x,y)=" << contours[i][j].x << "," << contours[i][j].y << endl;
+				}
+			}*/
+			cv::imshow("matROI", matROI);
+			/*Mat nonzero;
+			findNonZero(matROI, nonzero);
+			for (int j = 0; j < nonzero.total(); j++) {
+				cout << "Zero#" << j << ": " << nonzero.at<Point>(j).x << ", " << nonzero.at<Point>(j).y << endl;
+			}*/
+			int largest = 0,counter =0;
+			for (int y = 0; y < matROI.cols; y++) {
+				for (int x = 0; x < matROI.rows; x++) {
+					if (matROI.at<uchar>(x, y) == 255) {
+						cout <<"("<< y << ", " << x << ") , ";
+						counter++;
+						if (x == 62) {
+							cout << "*=*62*=*";
+						}
+						if (counter == 7) { 
+							cout << '\n'; 
+							counter = 0;
+						}
+						if (x > largest)
+						{							
+							largest = x;						
+						}						
+					}
+				}
+			}
+
+			cout << "largest :" << largest;
+			int intChar = cv::waitKey(0);										// get key press
+
+			if (intChar == 27) {												// if esc key was pressed
+				return(0);														// exit program
+			}
+			// end if
+		}	// end if
+	}	// end for
+
+	std::cout << "\nsegmentation complete\n\n";
+	return(0);
+}
+
