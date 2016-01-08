@@ -179,5 +179,34 @@ echo ${Unix[2]}
 //echo ${#Unix[1]}   //display the number of elements of the index
 //echo ${Unix[@]:3:2}   //extraction by offset andlength for an array
 //echo ${Unix[1]:0:4}
-//echo ${Unix[@]/Ubuntu/SCO Unix}  //search and replace
+//echo ${Unix[@]/Ubuntu/SCO Unix}  //search and temporary replacement
+Unix=("${Unix[@]}" "AIX" "HP-UX")  //add temporary
+echo ${Unix[4]}
+
+unset Unix[3]			//remove an element
+echo ${Unix[3]}
+
+declare -a pattern=(${u[0]/ban*/})
+echo ${pattern[@]}				//removing elements using patterns
+
+//copy an array
+shell=('bash' 'csh' 'jsh' 'rsh' 'ksh' 'rc' 'tcsh');
+Unixshell=("${Unix[@]}" "${shell[@]}")
+echo ${Unixshell[@]}
+
+//delete whole array
+unset Unixshell
+echo ${#Unixshell[@]}
+
+
 ----------------------------------
+read file content
+
+filecontent=( `cat "output.txt"` )
+
+for t in "${filecontent[@]}"
+do
+	echo $t
+done
+echo "Read file content!"
+-------------------------------
