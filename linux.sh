@@ -175,4 +175,9 @@ Unix[3]='Suse'
 echo ${Unix[2]}
 
 //echo ${Unix[@]}    //display all of the index
+//echo ${#Unix[@]}   // display the length of the array
+//echo ${#Unix[1]}   //display the number of elements of the index
+//echo ${Unix[@]:3:2}   //extraction by offset andlength for an array
+//echo ${Unix[1]:0:4}
+//echo ${Unix[@]/Ubuntu/SCO Unix}  //search and replace
 ----------------------------------
