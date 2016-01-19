@@ -1,0 +1,197 @@
+// generate_data.cpp
+
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<opencv2/ml/ml.hpp>
+
+#include<iostream>
+#include<vector>
+
+using   namespace std;
+using   namespace cv;
+// global variables ///////////////////////////////////////////////////////////////////////////////
+const int MIN_CONTOUR_AREA = 100;
+const int RESIZED_IMAGE_WIDTH = 20;
+const int RESIZED_IMAGE_HEIGHT = 20;
+Mat mareHistogram(Mat& img, int t)
+{
+
+	//col or row histogram?  
+	int sz = (t) ? img.rows : img.cols;
+	Mat mhist = Mat::zeros(1, sz, CV_8U);
+
+	//count nonzero value and check max V  
+	int max = -100;
+	for (int j = 0; j < sz; ++j)
+	{
+		Mat data = (t) ? img.row(j) : img.col(j);
+		int v = countNonZero(data);
+		mhist.at< unsigned char >(j) = v;
+		if (v > max)
+			max = v;
+	}
+
+	Mat histo;
+	int width, height;
+	if (t)
+	{
+		width = max;
+		height = sz;
+		histo = Mat::zeros(Size(width, height), CV_8U);
+
+		for (int i = 0; i < height; ++i)
+		{
+			for (int j = 0; j < mhist.at< unsigned char >(i); ++j)
+				histo.at< unsigned char >(i, j) = 255;
+		}
+
+	}
+	else {
+		width = sz;
+		height = max;
+		histo = Mat::zeros(Size(width, height), CV_8U);
+
+		for (int i = 0; i< width; ++i)
+		{
+			for (int j = 0; j< mhist.at< unsigned char >(i); ++j)
+				histo.at< unsigned char >(max - j - 1, i) = 255;
+		}
+
+	}
+
+
+
+	return histo;
+
+}
+///////////////////////////////////////////// MAIN //////////////////////////////////////////////////////
+int main() {
+
+	cv::Mat matTrainingNumbers;													// input image
+	cv::Mat matGrayscale;														// for greyscaling
+	cv::Mat matBlurred;															// declare various images
+	cv::Mat matThresh;															// for otsu method
+	cv::Mat matThreshCopy;														// create a copy of the image before finding contours
+
+	std::vector<std::vector<cv::Point> > ptContours;							// declare contours vector
+	std::vector<cv::Vec4i> v4iHierarchy;										// declare contours hierarchy
+																				// these are our training images
+	cv::Mat matTrainingImages;													// we have to declare a single Mat, then append to it as though it's a vector
+
+
+	matTrainingNumbers = cv::imread("sample.jpg");					// read in training numbers image
+
+
+	if (matTrainingNumbers.empty()) {											// if unable to open image
+		std::cout << "error: image not read from file\n\n";						// show error message on command line
+		return(0);																// and exit program
+	}
+	cv::cvtColor(matTrainingNumbers, matGrayscale, CV_BGR2GRAY);				// convert to grayscale
+
+																				//Get the size of the image for otsu method
+	int rows = matGrayscale.rows;
+	int cols = matGrayscale.cols;
+	cv::Size s = matGrayscale.size();
+	rows = s.height;
+	cols = s.width;
+	//convert into binary image using Otsu method
+	cv::Mat left = matGrayscale(cv::Rect(0, 0, cols, rows));
+	cv::Mat right = matGrayscale(cv::Rect(cols, 0, matGrayscale.cols - cols, rows));
+	cv::threshold(left, left, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(right, right, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(matGrayscale, matThresh, 70, 255, CV_THRESH_BINARY_INV);		//Invert the binary image
+	matThreshCopy = matThresh.clone();											// make a copy of the thresh image, this in necessary b/c findContours modifies the image
+	cv::findContours(matThreshCopy,												// input image, make sure to use a copy since the function will modify this image in the course of finding contours
+		ptContours,																// output contours
+		v4iHierarchy,															// output hierarchy
+		cv::RETR_EXTERNAL,														// retrieve the outermost contours only
+		cv::CHAIN_APPROX_SIMPLE);												// compress horizontal, vertical, and diagonal segments and leave only their end points
+
+	int countContour = 0;
+	for (int i = 0; i < ptContours.size(); i++) {								// for each contour
+		if (cv::contourArea(ptContours[i]) > MIN_CONTOUR_AREA) {				// if contour is big enough to consider
+			cv::Rect boundingRect = cv::boundingRect(ptContours[i]);			// get the bounding rect
+			cv::rectangle(matTrainingNumbers, boundingRect, cv::Scalar(0, 0, 255), 2);		// draw red rectangle around each contour as we ask user for input
+			cv::Mat matROI = matThresh(boundingRect);							// get ROI image of bounding rect
+			cv::Mat matROIResized;
+			cv::resize(matROI, matROIResized, cv::Size(RESIZED_IMAGE_WIDTH, RESIZED_IMAGE_HEIGHT));		// resize image, this will be more consistent for recognition and storage
+			countContour++;
+			//cv::imshow("matROI", matROI);										// show ROI image for reference
+			Mat img = matROI.clone();
+			cv::threshold(img, img, 70, 255, CV_THRESH_BINARY_INV);
+			Mat hHisto = mareHistogram(img, 0);
+			Mat vHisto = mareHistogram(img, 1);
+
+
+			imshow("origin", img);
+			imshow("hh", hHisto);
+			imshow("vv", vHisto);
+			cv::imshow("matTrainingNumbers", matTrainingNumbers);				// show training numbers image, this will now have red rectangles drawn on it
+
+																		//std::cout << ptContours[i] << std::endl;
+			int count = 0;
+			int half = matROI.cols / 2;
+			int NoPixelsLeft = 0 , NoPixelsRight = 0;
+			for (int x = 0; x <  matROI.cols; x++) {
+				for (int y = 0; y <  matROI.rows; y++) {
+					uchar color = matROI.at<uchar>(Point(x,y));
+					if (color == 255) {
+						
+						if (count <= half) {
+							NoPixelsLeft++;
+						}
+						else {
+							//count = 0;
+							NoPixelsRight++;
+						}
+					}
+				}
+				count++;
+			}
+			cv::threshold(matROI, matROIResized, 70, 255, CV_THRESH_BINARY_INV);
+			//cout << "width :" << (matROI.cols/2) << endl;
+			//cout << "no of white pixelsLeft: " << NoPixelsLeft << endl;
+			//cout << "no of white pixelsRight: " << NoPixelsRight << endl;
+			 cout << "contour Number :" << countContour << "	";
+			int Percent = (NoPixelsLeft + NoPixelsRight) * 50 / 100;
+			if (NoPixelsLeft > NoPixelsRight ) {
+				if (NoPixelsLeft-NoPixelsRight <= Percent & matROI.cols > matROI.rows) {
+					if (NoPixelsLeft - NoPixelsRight <= Percent) {
+						cout << "Connected!! " << endl;
+					}
+					else {
+						cout << "Not Connected!! " << endl;
+					}					
+				}
+				else {
+					cout << "Not Connected!! " << endl;
+				}
+
+			}
+			else {
+				if (NoPixelsRight - NoPixelsLeft <= Percent  & matROI.cols > matROI.rows) {
+					if (NoPixelsRight - NoPixelsLeft <= Percent) {
+						cout << "Connected!! " << endl;
+					}
+					else {
+						cout << "Not Connected!! " << endl;
+					}
+				}
+				else {
+					cout << "Not Connected!! else" << endl;
+				}
+			}
+			int intChar = cv::waitKey(0);										// get key press
+
+			if (intChar == 27) {												// if esc key was pressed
+				return(0);														// exit program
+			}
+			// end if
+		}	// end if
+	}	// end for
+
+	std::cout << "\nsegmentation complete\n\n";
+	return(0);
+}
+
