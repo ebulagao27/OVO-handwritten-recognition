@@ -1,0 +1,191 @@
+// generate_data.cpp
+
+#include<opencv2/core/core.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<opencv2/ml/ml.hpp>
+#include"histogram.cpp"
+#include<iostream>
+#include<vector>
+
+// global variables ///////////////////////////////////////////////////////////////////////////////
+const int MIN_CONTOUR_AREA = 100;
+const int RESIZED_IMAGE_WIDTH = 30;
+const int RESIZED_IMAGE_HEIGHT = 30;
+
+///////////////////////////////////////////// MAIN //////////////////////////////////////////////////////
+int main() {
+
+	cv::Mat matTrainingNumbers;													// input image
+	cv::Mat matGrayscale;														// for greyscaling
+	cv::Mat matBlurred;															// declare various images
+	cv::Mat matThresh;															// for otsu method
+	cv::Mat matThreshCopy;														// create a copy of the image before finding contours
+
+	std::vector<std::vector<cv::Point> > ptContours;							// declare contours vector
+	std::vector<cv::Vec4i> v4iHierarchy;										// declare contours hierarchy
+																				// these are our training images
+	cv::Mat matTrainingImages;													// we have to declare a single Mat, then append to it as though it's a vector
+
+
+	matTrainingNumbers = cv::imread("sample.jpg");					// read in training numbers image
+
+
+	if (matTrainingNumbers.empty()) {											// if unable to open image
+		std::cout << "error: image not read from file\n\n";						// show error message on command line
+		return(0);																// and exit program
+	}
+	cv::cvtColor(matTrainingNumbers, matGrayscale, CV_BGR2GRAY);				// convert to grayscale
+
+																				//Get the size of the image for otsu method
+	int rows = matGrayscale.rows;
+	int cols = matGrayscale.cols;
+	cv::Size s = matGrayscale.size();
+	rows = s.height;
+	cols = s.width;
+	//convert into binary image using Otsu method
+	cv::Mat left = matGrayscale(cv::Rect(0, 0, cols, rows));
+	cv::Mat right = matGrayscale(cv::Rect(cols, 0, matGrayscale.cols - cols, rows));
+	cv::threshold(left, left, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(right, right, 0, 255, CV_THRESH_OTSU);
+	cv::threshold(matGrayscale, matThresh, 70, 255, CV_THRESH_BINARY_INV);		//Invert the binary image
+																				//cv::imshow("matThresh", matThresh);											// show threshold image for reference
+	matThreshCopy = matThresh.clone();											// make a copy of the thresh image, this in necessary b/c findContours modifies the image
+	cv::findContours(matThreshCopy,												// input image, make sure to use a copy since the function will modify this image in the course of finding contours
+		ptContours,																// output contours
+		v4iHierarchy,															// output hierarchy
+		cv::RETR_EXTERNAL,														// retrieve the outermost contours only
+		cv::CHAIN_APPROX_SIMPLE);												// compress horizontal, vertical, and diagonal segments and leave only their end points
+
+	for (int i = 0; i < ptContours.size(); i++) {								// for each contour
+		if (cv::contourArea(ptContours[i]) > MIN_CONTOUR_AREA) {				// if contour is big enough to consider
+			cv::Rect boundingRect = cv::boundingRect(ptContours[i]);			// get the bounding rect
+			cv::rectangle(matTrainingNumbers, boundingRect, cv::Scalar(0, 0, 255), 2);		// draw red rectangle around each contour as we ask user for input
+			cv::Mat matROI = matThresh(boundingRect);							// get ROI image of bounding rect
+			cv::Mat matROIResized;
+			cv::resize(matROI, matROIResized, cv::Size(RESIZED_IMAGE_WIDTH, RESIZED_IMAGE_HEIGHT));		// resize image, this will be more consistent for recognition and storage
+
+			cv::imshow("matROI", matROI);	
+			imwrite("matROIconnected22.jpg", matROI);// show ROI image for reference
+			cv::imshow("matTrainingNumbers", matTrainingNumbers);				// show training numbers image, this will now have red rectangles drawn on it
+			cv::imwrite("matROIconnected1.jpg",matROI);
+			cv::Point center(matROI.cols / 2, matROI.rows / 2);
+			int cx = center.x;
+			int cy = center.y;
+			int width = boundingRect.width;
+			int height = boundingRect.height;
+			cout << "width :" << width << " height :" << height << endl;
+			int x = matROI.cols/2;
+			uchar charX;
+			uchar charY;
+			// initial drop fall algorithm
+		
+			int y = 0;
+			int prev = 0, prevy =0;
+			int yCoor = 0, xCoor = 0;
+			cout << x << ", " << y << "initial" << endl;
+			int down, downright, downleft, right, left, current;
+			while (y < matROI.rows && x < matROI.cols) {
+				xCoor = x;
+				yCoor = y;
+				down = matROI.at<uchar>(Point(x, ++yCoor)); xCoor = x;	yCoor = y;
+				downright = matROI.at<uchar>(Point(++xCoor, ++yCoor)); xCoor = x;	yCoor = y;
+				downleft = matROI.at<uchar>(Point(--xCoor, ++yCoor)); xCoor = x;	yCoor = y;
+				right = matROI.at<uchar>(Point(++xCoor, yCoor)); xCoor = x - 1;	yCoor = y;
+				left = matROI.at<uchar>(Point(xCoor, yCoor));
+				current = matROI.at<uchar>(Point(x, y));
+				cout << down << "," << downright << "," << downleft << "," << right << "," << left << endl;
+				if (current == 0) {//on black
+					//matROI.at<uchar>(Point(x, y)) = 200;
+					
+					if (down != 255) {//go down
+							y++;
+							cout << x << ", " << y << " black :go down" << endl;	
+
+					}
+					else if (downright != 255) {//go downright
+						x++;
+						y++;
+						cout << x << ", " << y << " black :go downright" << endl;
+					}
+					else if (downleft != 255) {//go downleft
+						x--;
+						y++;
+						cout << x << ", " << y << " black :go downleft" << endl;
+					}
+					else if (left != 255) {//left
+						//prev = x;
+						int xC = x + 1;
+						if (prev <= xC) {
+							prev = x;
+							x--;
+
+							cout << x << ", " << y << " black :go left****" << endl;
+						}
+						else {
+							y++;
+							cout << x << ", " << y << " black :go left-down" << endl;
+						}
+						prevy = y;
+					}
+					else if (right != 255) {//right
+					//	prev = x;
+						
+						int xCy = x + 1;
+						if (prev <= xCy) {
+							prev = x;
+							
+							y++;
+							cout << x << ", " << y << " black :go left1" << endl;
+						}
+						else{
+							x++;
+							cout << x << ", " << y << " black :go right" << endl;
+						}
+					}
+					
+					else {//down
+						y++;
+						cout << x << ", " << y << " black :go down2" << endl;
+					}
+					
+				}
+				else if (current == 255){//on white
+					
+					if (matROI.at<uchar>(Point(x, yCoor++)) == 255) {//go down
+						matROI.at<uchar>(Point(x, y)) = 0;
+						y++;
+						cout << x << ", " << y << " white :go down *" << endl;
+					}
+					//else if (matROI.at<uchar>(Point(xCoor++, yCoor++)) == 255) {//downright
+					//	x++;
+					//	y++;
+					//	cout << x << ", " << y << " white :go downright *" << endl;
+					//	matROI.at<uchar>(Point(x, y)) = 0;
+					//}
+					//else if (matROI.at<uchar>(Point(--xCoor, yCoor++)) == 255) {//downleft
+					//	--x;
+					//	y++;
+					//	cout << x << ", " << y << " white :go downleft *" << endl;
+					//	matROI.at<uchar>(Point(x, y)) = 0;
+					//}
+					//
+				}
+
+			} 
+			cout <<'\n';
+			imshow("matROI2", matROI);
+			imwrite("matROIconnected.jpg",matROI);
+			int intChar = cv::waitKey(0);										// get key press
+
+			if (intChar == 27) {												// if esc key was pressed
+				return(0);														// exit program
+			}
+			// end if
+		}	// end if
+	}	// end for
+
+	std::cout << "\nsegmentation complete\n\n";
+	return(0);
+}
+
